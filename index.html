@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code Playground</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@600&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand"><span class="mark" aria-hidden="true">&lt;/&gt;</span><h1>Code Playground</h1></div>
+      <div class="seg view-seg" role="group" aria-label="Visible pane">
+        <button type="button" id="v-code" aria-pressed="true">Code</button>
+        <button type="button" id="v-prev" aria-pressed="false">Preview</button>
+      </div>
+      <div class="actions">
+        <span class="status" id="status" role="status" aria-live="polite"></span>
+        <label class="switch"><input type="checkbox" id="auto" checked><span class="track"></span><span>Auto-run</span></label>
+        <button type="button" class="btn primary" id="run" title="Run (Ctrl/Cmd + Enter)">Run</button>
+        <button type="button" class="btn" id="copy">Copy tab</button>
+        <button type="button" class="btn" id="sample">Sample</button>
+        <button type="button" class="btn" id="clear">Clear all</button>
+        <button type="button" class="btn layout-btn" id="layout">Stack</button>
+      </div>
+    </header>
+
+    <div class="stage" id="stage" data-layout="cols" data-view="code">
+      <section class="pane editor-pane" aria-label="Code editor">
+        <div class="tabs" role="tablist" aria-label="Files">
+          <button type="button" class="tab" role="tab" data-id="html" aria-selected="true"><span class="dot"></span>index.html</button>
+          <button type="button" class="tab" role="tab" data-id="css" aria-selected="false"><span class="dot"></span>style.css</button>
+          <button type="button" class="tab" role="tab" data-id="js" aria-selected="false"><span class="dot"></span>script.js</button>
+        </div>
+        <div class="code">
+          <div class="gutter" id="gutter" aria-hidden="true">1</div>
+          <div class="ed">
+            <pre id="hl" aria-hidden="true"></pre>
+            <textarea id="ta" aria-label="Code" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" wrap="off" placeholder="Paste or write code here"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <div class="resizer" id="resizer" role="separator" tabindex="0" aria-label="Resize panes" aria-orientation="vertical"></div>
+
+      <section class="pane preview-pane" aria-label="Live preview">
+        <div class="pv-bar">
+          <span class="pv-title">Preview</span>
+          <div class="pv-tools">
+            <div class="seg sm dev-seg" role="group" aria-label="Preview width">
+              <button type="button" data-dev="fit" aria-pressed="true">Fit</button>
+              <button type="button" data-dev="tablet" aria-pressed="false">768</button>
+              <button type="button" data-dev="phone" aria-pressed="false">390</button>
+            </div>
+            <button type="button" class="btn sm" id="reload">Reload</button>
+            <button type="button" class="btn sm" id="console-toggle" aria-expanded="false">Console <span class="badge" id="badge">0</span></button>
+          </div>
+        </div>
+        <div class="frame-wrap" id="fw" data-device="fit">
+          <iframe id="frame" title="Live preview" sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
+        </div>
+        <div class="console" id="console" hidden>
+          <div class="console-head">
+            <span class="pv-title">Console</span>
+            <button type="button" class="btn sm" id="console-clear">Clear</button>
+          </div>
+          <div class="console-body" id="console-body"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
