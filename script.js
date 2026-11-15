@@ -201,7 +201,7 @@
   var KEY = 'ctrlsaptam-v1';
   var S = {
     files: { html: SAMPLE.html, css: SAMPLE.css, js: SAMPLE.js },
-    active: 'html', auto: true, layout: 'cols', split: 50, device: 'fit', phone: false, console: false, view: 'both'
+    active: 'html', auto: true, layout: 'cols', split: 50, device: 'fit', phone: false, console: false, view: 'both', theme: 'auto'
   };
   try {
     var raw = localStorage.getItem(KEY) || localStorage.getItem('code-playground-v1');
@@ -209,7 +209,7 @@
       var o = JSON.parse(raw);
       if (o && o.files && typeof o.files.html === 'string' && typeof o.files.css === 'string' && typeof o.files.js === 'string') {
         S.files = o.files;
-        ['active', 'auto', 'layout', 'split', 'device', 'phone', 'console', 'view'].forEach(function (k) { if (o[k] !== undefined) S[k] = o[k]; });
+        ['active', 'auto', 'layout', 'split', 'device', 'phone', 'console', 'view', 'theme'].forEach(function (k) { if (o[k] !== undefined) S[k] = o[k]; });
       }
     }
   } catch (e) {}
@@ -218,6 +218,7 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }, 400);
   }
+  window.addEventListener('pagehide', function () { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} });
 
   /* ---------- Elements ---------- */
   function $(id) { return document.getElementById(id); }
@@ -703,6 +704,18 @@
   if (window.ResizeObserver) new ResizeObserver(checkCompact).observe(appEl);
   else window.addEventListener('resize', checkCompact);
 
+  /* ---------- Theme: Auto follows the device, Light and Dark override it ---------- */
+  var themeBtns = Array.prototype.slice.call(document.querySelectorAll('[data-theme-set]'));
+  function applyTheme() {
+    var root = document.documentElement;
+    if (S.theme === 'light' || S.theme === 'dark') root.setAttribute('data-theme', S.theme);
+    else root.removeAttribute('data-theme');
+    themeBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themeSet === S.theme)); });
+  }
+  themeBtns.forEach(function (b) {
+    b.addEventListener('click', function () { S.theme = b.dataset.themeSet; applyTheme(); save(); });
+  });
+
   /* ---------- Divider (drag or arrow keys) ---------- */
   resizer.addEventListener('pointerdown', function (e) {
     e.preventDefault();
@@ -745,6 +758,8 @@
   tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.id === S.active)); });
   ta.value = S.files[S.active];
   render();
+  if (['auto', 'light', 'dark'].indexOf(S.theme) < 0) S.theme = 'auto';
+  applyTheme();
   applyPhone();
   appEl.toggleAttribute('data-compact', appEl.clientWidth <= 820);
   applyLayout();

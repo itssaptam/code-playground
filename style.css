@@ -115,7 +115,7 @@ button { cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .seg.sm button { height: 24px; padding: 0 9px; font-size: 12px; }
 #layouts button { padding: 0 9px; }
-.view-seg { display: none; }
+.view-seg { display: inline-flex; }
 
 /* "More" menu */
 .menu-wrap { position: relative; }
@@ -217,21 +217,24 @@ button { cursor: pointer; }
 .line.error { background: var(--err-bg); color: var(--err); }
 
 /* Compact mode: set by script.js whenever the app is 820px wide or less (phones, and the Phone frame) */
-.app[data-compact] .view-seg { display: inline-flex; }
 .app[data-compact] .lo-h,
 .app[data-compact] .dev-seg,
 .app[data-compact] .status { display: none; }
 .app[data-compact] .top { gap: 8px 10px; }
 .app[data-compact] .brand h1 { font-size: 16px; }
 .app[data-compact] .logo { width: 28px; height: 28px; }
-.app[data-compact] .stage[data-view="code"] .preview-pane,
-.app[data-compact] .stage[data-view="code"] .resizer,
-.app[data-compact] .stage[data-view="preview"] .editor-pane,
-.app[data-compact] .stage[data-view="preview"] .resizer { display: none; }
-.app[data-compact] .stage[data-view="code"],
-.app[data-compact] .stage[data-view="preview"] { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) !important; }
+/* Code / Both / Preview: works at every width. Hidden pane and divider go away, the other pane fills the stage. */
+.stage[data-view="code"] .preview-pane,
+.stage[data-view="code"] .resizer,
+.stage[data-view="preview"] .editor-pane,
+.stage[data-view="preview"] .resizer { display: none; }
+.stage[data-view="code"],
+.stage[data-view="preview"] { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) !important; }
 .app[data-compact] .console { height: 130px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }
 }
+
+/* Compact mode: theme buttons stay, they are small */
+#themes button { padding: 0 9px; }
