@@ -6,7 +6,6 @@
   <title>CtrlSaptam</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@600;700&display=swap">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="favicon.png">
 </head>
 <body>
   <div class="app" id="app">
@@ -68,11 +67,9 @@
           <button type="button" class="tab" role="tab" data-id="js" aria-selected="false"><span class="dot"></span>script.js</button>
         </div>
         <div class="code">
-          <div class="gutter" id="gutter" aria-hidden="true">1</div>
-          <div class="ed">
-            <pre id="hl" aria-hidden="true"></pre>
-            <textarea id="ta" aria-label="Code" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" wrap="off" placeholder="Paste or write code here"></textarea>
-          </div>
+          <div class="gutter-bg" aria-hidden="true"></div>
+          <pre id="hl" aria-hidden="true"></pre>
+          <textarea id="ta" aria-label="Code" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" wrap="soft" placeholder="Paste or write code here"></textarea>
         </div>
       </section>
 

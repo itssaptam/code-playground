@@ -158,21 +158,28 @@ button { cursor: pointer; }
 .tab[data-id="css"] .dot { background: var(--c-prop); }
 .tab[data-id="js"] .dot { background: var(--c-attr); }
 
-.code { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); }
-.gutter {
-  overflow: hidden; padding: 12px 10px 80px 14px; text-align: right; white-space: pre; user-select: none;
-  color: var(--muted); opacity: .75; background: var(--panel-2); border-right: 1px solid var(--line);
-  font: 13px/20px var(--font-code); font-variant-numeric: tabular-nums;
+/* Editor: a transparent textarea sits on top of a highlighted copy of the code.
+   Both wrap long lines the same way. Line numbers are CSS counters inside the highlighted copy,
+   so they stay lined up with the first row of every wrapped line. */
+.code { position: relative; flex: 1; min-height: 0; --num: 46px; }
+.gutter-bg { position: absolute; top: 0; bottom: 0; left: 0; width: var(--num); background: var(--panel-2); border-right: 1px solid var(--line); }
+.code pre, .code textarea {
+  position: absolute; inset: 0; margin: 0; width: 100%; height: 100%; border: 0; border-radius: 0;
+  padding: 12px 16px 80px calc(var(--num) + 14px);
+  font: 13px/20px var(--font-code); font-variant-ligatures: none; letter-spacing: 0; tab-size: 2; -moz-tab-size: 2;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; overflow-x: hidden; overflow-y: scroll;
 }
-.ed { position: relative; min-width: 0; }
-.ed pre, .ed textarea {
-  position: absolute; inset: 0; margin: 0; width: 100%; height: 100%; padding: 12px 16px 40px 14px; border: 0; border-radius: 0;
-  font: 13px/20px var(--font-code); font-variant-ligatures: none; letter-spacing: 0; tab-size: 2; -moz-tab-size: 2; white-space: pre; overflow: auto;
+.code pre { pointer-events: none; color: var(--fg); background: transparent; counter-reset: ln; scrollbar-color: transparent transparent; }
+.code pre::-webkit-scrollbar { background: transparent; }
+.code pre::-webkit-scrollbar-thumb { background: transparent; }
+.code pre .l { position: relative; min-height: 20px; counter-increment: ln; }
+.code pre .l::before {
+  content: counter(ln); position: absolute; left: calc(-1 * (var(--num) + 14px)); width: calc(var(--num) - 10px);
+  text-align: right; color: var(--muted); opacity: .75; font-variant-numeric: tabular-nums; user-select: none;
 }
-.ed pre { overflow: hidden; pointer-events: none; color: var(--fg); background: transparent; }
-.ed textarea { resize: none; outline: none; background: transparent; color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--fg); }
-.ed textarea::selection { background: var(--sel); -webkit-text-fill-color: transparent; }
-.ed textarea::placeholder { color: var(--muted); -webkit-text-fill-color: var(--muted); }
+.code textarea { resize: none; outline: none; background: transparent; color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--fg); }
+.code textarea::selection { background: var(--sel); -webkit-text-fill-color: transparent; }
+.code textarea::placeholder { color: var(--muted); -webkit-text-fill-color: var(--muted); }
 .t-tag { color: var(--c-tag); }
 .t-attr { color: var(--c-attr); }
 .t-str { color: var(--c-str); }

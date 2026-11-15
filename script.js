@@ -221,15 +221,17 @@
 
   /* ---------- Elements ---------- */
   function $(id) { return document.getElementById(id); }
-  var ta = $('ta'), hl = $('hl'), gutterEl = $('gutter'), stage = $('stage');
+  var ta = $('ta'), hl = $('hl'), stage = $('stage');
   var statusEl = $('status'), autoEl = $('auto'), resizer = $('resizer');
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
-  var scrollMem = { html: [0, 0], css: [0, 0], js: [0, 0] };
+  var scrollMem = { html: 0, css: 0, js: 0 };
   var NAMES = { html: 'index.html', css: 'style.css', js: 'script.js' };
 
   /* ---------- Syntax highlighting ---------- */
   function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function sp(c, s) { return '<span class="t-' + c + '">' + esc(s) + '</span>'; }
+  function sp(c, s) {
+    return s.split('\n').map(function (p) { return '<span class="t-' + c + '">' + esc(p) + '</span>'; }).join('\n');
+  }
   function run(src, re, fn) {
     var out = '', last = 0, m;
     re.lastIndex = 0;
@@ -279,40 +281,66 @@
   var HL = { html: hlHTML, css: hlCSS, js: hlJS };
 
   /* ---------- Editor rendering ---------- */
-  var lineCount = 0;
   function render() {
-    var t = ta.value;
-    hl.innerHTML = HL[S.active](t) + '\n';
-    var n = t.split('\n').length;
-    if (n !== lineCount) {
-      lineCount = n;
-      var g = '';
-      for (var i = 1; i <= n; i++) g += i + '\n';
-      gutterEl.textContent = g;
-    }
+    var lines = HL[S.active](ta.value).split('\n');
+    var out = '';
+    for (var i = 0; i < lines.length; i++) out += '<div class="l">' + lines[i] + '</div>';
+    hl.innerHTML = out;
     syncScroll();
   }
-  function syncScroll() {
-    hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; gutterEl.scrollTop = ta.scrollTop;
-  }
+  function syncScroll() { hl.scrollTop = ta.scrollTop; }
   ta.addEventListener('scroll', syncScroll);
 
+  // Vertical position of a character offset, measured in the highlighted copy (works with wrapped lines)
+  function caretY(pos) {
+    var before = ta.value.slice(0, pos), row = before.split('\n').length - 1;
+    var line = hl.children[row];
+    if (!line) return 0;
+    var col = pos - (before.lastIndexOf('\n') + 1), y = line.offsetTop;
+    var walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT), n, left = col;
+    while ((n = walker.nextNode())) {
+      if (left <= n.length) {
+        var r = document.createRange();
+        r.setStart(n, left); r.setEnd(n, left);
+        var rect = r.getClientRects()[0] || r.getBoundingClientRect();
+        if (rect && rect.height) y = rect.top - hl.getBoundingClientRect().top + hl.scrollTop;
+        break;
+      }
+      left -= n.length;
+    }
+    return y;
+  }
+  // Scroll so the caret is visible, centred when it was off screen
+  function revealCaret() {
+    var y = caretY(ta.selectionEnd), top = ta.scrollTop, h = ta.clientHeight;
+    if (y < top + 20 || y > top + h - 100) ta.scrollTop = Math.max(0, y - h / 2);
+    syncScroll();
+  }
+
   function setActive(id) {
-    scrollMem[S.active] = [ta.scrollTop, ta.scrollLeft];
+    scrollMem[S.active] = ta.scrollTop;
     S.active = id;
     tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.id === id)); });
     ta.value = S.files[id];
-    lineCount = 0;
     render();
-    ta.scrollTop = scrollMem[id][0]; ta.scrollLeft = scrollMem[id][1];
+    ta.scrollTop = scrollMem[id];
     syncScroll();
     save();
   }
   tabs.forEach(function (t) { t.addEventListener('click', function () { setActive(t.dataset.id); ta.focus(); }); });
 
-  function onInput() {
+  function onInput(e) {
+    var history = e && /^history/.test(e.inputType || '');
+    if (history) { var p = ta.selectionEnd; ta.setSelectionRange(p, p); } // undo/redo: just a caret, no highlighted text
     S.files[S.active] = ta.value;
     render();
+    if (history) {
+      revealCaret();
+      requestAnimationFrame(function () {
+        if (ta.selectionStart !== ta.selectionEnd) { var q = ta.selectionEnd; ta.setSelectionRange(q, q); }
+        revealCaret();
+      });
+    }
     save();
     if (S.auto) scheduleRun();
   }
@@ -605,7 +633,7 @@
   function loadAll(files) {
     S.files = { html: files.html, css: files.css, js: files.js };
     ta.value = S.files[S.active];
-    lineCount = 0; render(); save(); runPreview();
+    render(); save(); runPreview();
   }
   armed($('sample'), 'Replace all code?', function () { setMenu(false); loadAll(SAMPLE); flash('Sample loaded'); });
   armed($('clear'), 'Clear everything?', function () { setMenu(false); loadAll({ html: '', css: '', js: '' }); flash('Cleared'); ta.focus(); });
