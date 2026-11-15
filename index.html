@@ -27,11 +27,13 @@
       </div>
 
       <div class="actions">
-        <span class="status" id="status" role="status" aria-live="polite"></span>
-        <label class="switch"><input type="checkbox" id="auto" checked><span class="track"></span><span>Auto-run</span></label>
-        <button type="button" class="btn primary" id="run" title="Run (Ctrl/Cmd + Enter)">Run</button>
+        <div class="act-main">
+          <label class="switch" title="Run automatically while you type"><input type="checkbox" id="auto" checked><span class="track"></span><span>Auto-run</span></label>
+          <button type="button" class="btn primary" id="run" title="Run (Ctrl/Cmd + Enter)">Run</button>
+        </div>
 
-        <div class="seg" id="layouts" role="group" aria-label="Layout">
+        <div class="act-tools">
+          <div class="seg" id="layouts" role="group" aria-label="Layout">
           <button type="button" class="lo-h" data-layout="cols" aria-pressed="true" title="Code left, preview right" aria-label="Code left, preview right">
             <svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true"><rect x=".75" y=".75" width="18.5" height="12.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v12" stroke="currentColor" stroke-width="1.5"/><rect x="11.2" y="2.2" width="6.6" height="9.6" rx="1" fill="currentColor" opacity=".5"/></svg>
           </button>
@@ -46,26 +48,25 @@
           </button>
         </div>
 
-        <div class="seg" id="themes" role="group" aria-label="Theme">
-          <button type="button" data-theme-set="auto" aria-pressed="true" title="Theme: follow device" aria-label="Theme: follow device">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+          <button type="button" class="btn icon" id="theme" data-state="auto" title="Theme: follow device" aria-label="Theme: follow device">
+            <span class="i-auto"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>
+            <span class="i-light"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+            <span class="i-dark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></span>
           </button>
-          <button type="button" data-theme-set="light" aria-pressed="false" title="Theme: light" aria-label="Theme: light">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-          </button>
-          <button type="button" data-theme-set="dark" aria-pressed="false" title="Theme: dark" aria-label="Theme: dark">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-          </button>
-        </div>
 
-        <button type="button" class="btn" id="phone" aria-pressed="false" title="Wrap everything in a 9:16 phone frame for recording">Phone</button>
+          <button type="button" class="btn icon" id="phone" aria-pressed="false" title="Phone frame (9:16) for recording" aria-label="Phone frame">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18.5h2"/></svg>
+          </button>
 
-        <div class="menu-wrap">
-          <button type="button" class="btn" id="more" aria-haspopup="true" aria-expanded="false">More</button>
-          <div class="menu" id="menu" hidden>
-            <button type="button" class="item" id="copy">Copy tab</button>
-            <button type="button" class="item" id="sample">Load sample</button>
-            <button type="button" class="item" id="clear">Clear all</button>
+          <div class="menu-wrap">
+            <button type="button" class="btn icon" id="more" aria-haspopup="true" aria-expanded="false" title="More" aria-label="More">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></svg>
+            </button>
+            <div class="menu" id="menu" hidden>
+              <button type="button" class="item" id="copy">Copy tab</button>
+              <button type="button" class="item" id="sample">Load sample</button>
+              <button type="button" class="item" id="clear">Clear all</button>
+            </div>
           </div>
         </div>
       </div>
@@ -90,6 +91,7 @@
       <section class="pane preview-pane" aria-label="Live preview">
         <div class="pv-bar">
           <span class="pv-title">Preview</span>
+          <span class="status" id="status" role="status" aria-live="polite"></span>
           <div class="pv-tools">
             <div class="seg sm dev-seg" role="group" aria-label="Preview width">
               <button type="button" data-dev="fit" aria-pressed="true">Fit</button>

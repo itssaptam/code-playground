@@ -698,22 +698,28 @@
   phoneBtn.addEventListener('click', function () { S.phone = !S.phone; applyPhone(); checkCompact(); save(); });
 
   function checkCompact() {
+    appEl.toggleAttribute('data-tight', appEl.clientWidth <= 1000);
     var c = appEl.clientWidth <= 820;
     if (c !== isCompact()) { appEl.toggleAttribute('data-compact', c); applyLayout(); }
   }
   if (window.ResizeObserver) new ResizeObserver(checkCompact).observe(appEl);
   else window.addEventListener('resize', checkCompact);
 
-  /* ---------- Theme: Auto follows the device, Light and Dark override it ---------- */
-  var themeBtns = Array.prototype.slice.call(document.querySelectorAll('[data-theme-set]'));
+  /* ---------- Theme: one button cycles Auto (follows the device), Light, Dark ---------- */
+  var themeBtn = $('theme');
+  var THEMES = ['auto', 'light', 'dark'];
+  var THEME_NAMES = { auto: 'follow device', light: 'light', dark: 'dark' };
   function applyTheme() {
     var root = document.documentElement;
     if (S.theme === 'light' || S.theme === 'dark') root.setAttribute('data-theme', S.theme);
     else root.removeAttribute('data-theme');
-    themeBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themeSet === S.theme)); });
+    themeBtn.dataset.state = S.theme;
+    var label = 'Theme: ' + THEME_NAMES[S.theme];
+    themeBtn.title = label; themeBtn.setAttribute('aria-label', label);
   }
-  themeBtns.forEach(function (b) {
-    b.addEventListener('click', function () { S.theme = b.dataset.themeSet; applyTheme(); save(); });
+  themeBtn.addEventListener('click', function () {
+    S.theme = THEMES[(THEMES.indexOf(S.theme) + 1) % THEMES.length];
+    applyTheme(); save(); flash('Theme: ' + THEME_NAMES[S.theme]);
   });
 
   /* ---------- Divider (drag or arrow keys) ---------- */
@@ -762,6 +768,7 @@
   applyTheme();
   applyPhone();
   appEl.toggleAttribute('data-compact', appEl.clientWidth <= 820);
+  appEl.toggleAttribute('data-tight', appEl.clientWidth <= 1000);
   applyLayout();
   applyView();
   applyDevice();

@@ -81,7 +81,11 @@ button { cursor: pointer; }
 }
 
 /* Toolbar */
-.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+/* Toolbar: brand left, Code/Both/Preview centred, actions right. On narrow widths it becomes two rows. */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px 16px; }
+.brand { justify-self: start; }
+.view-seg { justify-self: center; }
+.actions { justify-self: end; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand h1 { margin: 0; font: 700 18px/1 var(--font-display); letter-spacing: -0.02em; }
 .brand h1 span { color: var(--muted); font-weight: 600; }
@@ -89,7 +93,9 @@ button { cursor: pointer; }
 .logo-bg { fill: var(--accent); }
 .logo-s { fill: var(--accent-fg); font: 700 21px var(--font-display); }
 .logo-cursor { fill: var(--accent-fg); opacity: .85; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actions { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.act-main, .act-tools { display: flex; align-items: center; gap: 8px; }
+.act-main { min-width: 0; }
 .btn {
   display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
   border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 13px; font-weight: 500;
@@ -99,7 +105,12 @@ button { cursor: pointer; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; border-radius: 6px; }
-.status { font-size: 12px; color: var(--muted); min-width: 0; }
+.status { font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: auto; }
+.switch span:last-child { white-space: nowrap; }
+.btn.icon { width: 32px; padding: 0; justify-content: center; }
+.btn.icon svg { display: block; }
+#theme span { display: none; line-height: 0; }
+#theme[data-state="auto"] .i-auto, #theme[data-state="light"] .i-light, #theme[data-state="dark"] .i-dark { display: block; }
 
 .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; position: relative; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -116,6 +127,7 @@ button { cursor: pointer; }
 .seg.sm button { height: 24px; padding: 0 9px; font-size: 12px; }
 #layouts button { padding: 0 9px; }
 .view-seg { display: inline-flex; }
+.view-seg button { min-width: 64px; }
 
 /* "More" menu */
 .menu-wrap { position: relative; }
@@ -192,6 +204,7 @@ button { cursor: pointer; }
 
 /* Preview. Two stacked frames: the new page loads in the hidden one and is shown only when ready, so updates never flash. */
 .pv-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 6px 8px 6px 14px; min-height: 40px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.pv-bar .pv-title { flex: none; }
 .pv-title { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .pv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .badge { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 11px; line-height: 18px; text-align: center; }
@@ -220,7 +233,14 @@ button { cursor: pointer; }
 .app[data-compact] .lo-h,
 .app[data-compact] .dev-seg,
 .app[data-compact] .status { display: none; }
-.app[data-compact] .top { gap: 8px 10px; }
+.app[data-compact] .view-seg button { min-width: 0; padding: 0 10px; }
+.app[data-compact] .act-main, .app[data-compact] .act-tools { gap: 6px; }
+.app[data-compact] .actions { gap: 8px; }
+/* Two-row toolbar when the window is not wide enough for one row (also used on phones) */
+.app[data-compact] .top, .app[data-tight] .top { grid-template-columns: minmax(0, 1fr) auto; }
+.app[data-compact] .brand, .app[data-tight] .brand { grid-column: 1; grid-row: 1; }
+.app[data-compact] .view-seg, .app[data-tight] .view-seg { grid-column: 2; grid-row: 1; justify-self: end; }
+.app[data-compact] .actions, .app[data-tight] .actions { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; justify-content: space-between; }
 .app[data-compact] .brand h1 { font-size: 16px; }
 .app[data-compact] .logo { width: 28px; height: 28px; }
 /* Code / Both / Preview: works at every width. Hidden pane and divider go away, the other pane fills the stage. */
@@ -236,5 +256,3 @@ button { cursor: pointer; }
   *, *::before, *::after { transition: none !important; }
 }
 
-/* Compact mode: theme buttons stay, they are small */
-#themes button { padding: 0 9px; }
