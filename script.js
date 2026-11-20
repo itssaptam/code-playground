@@ -201,7 +201,8 @@
   var KEY = 'ctrlsaptam-v1';
   var S = {
     files: { html: SAMPLE.html, css: SAMPLE.css, js: SAMPLE.js },
-    active: 'html', auto: true, layout: 'cols', split: 50, device: 'fit', phone: false, console: false, view: 'both', theme: 'auto'
+    active: 'html', auto: true, layout: 'cols', split: 50, device: 'fit', phone: false, console: false, view: 'both', theme: 'auto',
+    names: { html: 'index.html', css: 'style.css', js: 'script.js' }, project: ''
   };
   try {
     var raw = localStorage.getItem(KEY) || localStorage.getItem('code-playground-v1');
@@ -210,6 +211,7 @@
       if (o && o.files && typeof o.files.html === 'string' && typeof o.files.css === 'string' && typeof o.files.js === 'string') {
         S.files = o.files;
         ['active', 'auto', 'layout', 'split', 'device', 'phone', 'console', 'view', 'theme'].forEach(function (k) { if (o[k] !== undefined) S[k] = o[k]; });
+        if (o.names && typeof o.names.html === 'string' && typeof o.names.css === 'string' && typeof o.names.js === 'string') { S.names = o.names; S.project = typeof o.project === 'string' ? o.project : ''; }
       }
     }
   } catch (e) {}
@@ -226,7 +228,6 @@
   var statusEl = $('status'), autoEl = $('auto'), resizer = $('resizer');
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
   var scrollMem = { html: 0, css: 0, js: 0 };
-  var NAMES = { html: 'index.html', css: 'style.css', js: 'script.js' };
 
   /* ---------- Syntax highlighting ---------- */
   function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -334,6 +335,7 @@
     var history = e && /^history/.test(e.inputType || '');
     if (history) { var p = ta.selectionEnd; ta.setSelectionRange(p, p); } // undo/redo: just a caret, no highlighted text
     S.files[S.active] = ta.value;
+    if (project.handle) markDirty(true);
     render();
     if (history) {
       revealCaret();
@@ -472,25 +474,101 @@
     });
   }
 
-  var LINK_RE = /<link\b[^>]*href=["'](?:\.\/)?style\.css["'][^>]*>/i;
-  var SCRIPT_RE = /<script\b[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i;
-  function styleTag(css) { return '<style id="__pg_css">' + css.replace(/<\/style/gi, '<\\/style') + '</style>'; }
-  function scriptTag(js) { return '<script>' + js.replace(/<\/script/gi, '<\\/script') + '<\/script>'; }
+  /* ---------- Building the preview page ----------
+     The editor holds three files (HTML, CSS, JS). Everything else a folder project needs
+     (other CSS or JS files, images, fonts) is read once when the folder is opened and inlined here. */
+  var project = { handle: null, assets: {}, texts: {}, mapped: { html: true, css: true, js: true } };
+
+  function normPath(p) {
+    var out = [];
+    String(p).split('/').forEach(function (s) {
+      if (!s || s === '.') return;
+      if (s === '..') out.pop(); else out.push(s);
+    });
+    return out.join('/');
+  }
+  function dirOf(p) { var i = p.lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); }
+  function baseName(p) { return p.slice(p.lastIndexOf('/') + 1); }
+  // Turns a path written in a file into a path from the project root. Returns null for web links, data: URLs and #anchors.
+  function resolveRef(base, ref) {
+    if (!ref) return null;
+    ref = ref.trim();
+    if (!ref || /^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) return null;
+    ref = ref.replace(/[?#].*$/, '');
+    try { ref = decodeURIComponent(ref); } catch (e) {}
+    return normPath(ref.charAt(0) === '/' ? ref : (base ? base + '/' : '') + ref);
+  }
+  function getAttr(tag, name) {
+    var m = new RegExp('\\b' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\')', 'i').exec(tag);
+    return m ? (m[1] !== undefined ? m[1] : m[2]) : null;
+  }
+  function fixAttrs(tag, names, base) {
+    names.forEach(function (name) {
+      tag = tag.replace(new RegExp('(\\b' + name + '\\s*=\\s*)(["\'])(.*?)\\2', 'i'), function (m, pre, q, v) {
+        var r = resolveRef(base, v), d = r !== null ? project.assets[r] : null;
+        return d ? pre + q + d + q : m;
+      });
+    });
+    return tag;
+  }
+  function fixCssUrls(css, base) {
+    return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, function (m, q, u) {
+      var r = resolveRef(base, u), d = r !== null ? project.assets[r] : null;
+      return d ? 'url(' + d + ')' : m; // unquoted, so it is safe inside style="..." attributes too
+    });
+  }
+  function styleTag(css, live) { return '<style' + (live ? ' id="__pg_css"' : '') + '>' + css.replace(/<\/style/gi, '<\\/style') + '</style>'; }
+  function scriptTag(js, attrs) {
+    attrs = (attrs || '').replace(/\s*\bsrc\s*=\s*(?:"[^"]*"|'[^']*')/i, '').replace(/\s+(?:defer|async)(?=\s|$)/gi, '');
+    return '<script' + attrs + '>' + js.replace(/<\/script/gi, '<\\/script') + '<\/script>';
+  }
+  function cssForPreview() { return fixCssUrls(S.files.css, dirOf(normPath(S.names.css))); }
 
   function buildDoc() {
     var html = S.files.html, css = S.files.css, js = S.files.js;
-    var usedCss = false, usedJs = false;
-    var out = html.replace(LINK_RE, function () { usedCss = true; return styleTag(css); });
-    out = out.replace(SCRIPT_RE, function () { usedJs = true; return scriptTag(js); });
+    var base = dirOf(normPath(S.names.html));
+    var cssPath = normPath(S.names.css), jsPath = normPath(S.names.js);
+    var usedCss = false, usedJs = false, deferred = [];
+
+    var out = html.replace(/<link\b[^>]*>/gi, function (tag) {
+      if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) return fixAttrs(tag, ['href'], base);
+      var r = resolveRef(base, getAttr(tag, 'href'));
+      if (r === null) return tag;
+      if (r === cssPath) { if (usedCss) return ''; usedCss = true; return styleTag(cssForPreview(), true); }
+      if (project.texts[r] !== undefined) return styleTag(fixCssUrls(project.texts[r], dirOf(r)));
+      return tag;
+    });
+
+    out = out.replace(/<script\b([^>]*)>\s*<\/script>/gi, function (tag, attrs) {
+      var r = resolveRef(base, getAttr(tag, 'src'));
+      if (r === null) return tag;
+      var code = null;
+      if (r === jsPath) { if (usedJs) return ''; usedJs = true; code = js; }
+      else if (project.texts[r] !== undefined) code = project.texts[r];
+      if (code === null) return tag;
+      var tagOut = scriptTag(code, attrs);
+      // an inline script cannot be "deferred", so run it at the end of the page instead
+      if (/\sdefer(?=\s|$)/i.test(attrs) && !/type\s*=\s*["']?module/i.test(attrs)) { deferred.push(tagOut); return ''; }
+      return tagOut;
+    });
+
+    out = out.replace(/<(?:img|source|video|audio|track|input|embed)\b[^>]*>/gi, function (tag) {
+      return fixAttrs(tag, ['src', 'poster'], base);
+    });
+
     if (!usedCss && css.trim()) {
       usedCss = true;
-      if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, function (m) { return styleTag(css) + m; });
-      else out = styleTag(css) + out;
+      if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, function (m) { return styleTag(cssForPreview(), true) + m; });
+      else out = styleTag(cssForPreview(), true) + out;
     }
-    if (!usedJs && js.trim()) {
-      if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, function (m) { return scriptTag(js) + m; });
-      else out = out + scriptTag(js);
+    if (!usedJs && js.trim()) deferred.push(scriptTag(js));
+    if (deferred.length) {
+      var tail = deferred.join('');
+      if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, function (m) { return tail + m; });
+      else out = out + tail;
     }
+    out = fixCssUrls(out, base); // style="background: url(...)" written in the HTML itself
+
     cssLive = usedCss;
     var hookTag = '<script>(' + hook.toString() + ')(' + JSON.stringify(scrollPos) + ');<\/script>';
     if (/<head[^>]*>/i.test(out)) return out.replace(/<head[^>]*>/i, function (m) { return m + hookTag; });
@@ -503,7 +581,7 @@
   function flash(text) { statusEl.textContent = text; }
 
   function postCss() {
-    try { front.contentWindow.postMessage({ __pgcss: 1, css: S.files.css }, '*'); } catch (e) {}
+    try { front.contentWindow.postMessage({ __pgcss: 1, css: cssForPreview() }, '*'); } catch (e) {}
   }
   function swap(next) {
     var old = front;
@@ -604,7 +682,7 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMenu(false); });
 
   $('copy').addEventListener('click', function () {
-    var text = ta.value, name = NAMES[S.active];
+    var text = ta.value, name = fileLabel(S.active);
     setMenu(false);
     function fallback() {
       ta.focus(); ta.select();
@@ -636,8 +714,196 @@
     ta.value = S.files[S.active];
     render(); save(); runPreview();
   }
-  armed($('sample'), 'Replace all code?', function () { setMenu(false); loadAll(SAMPLE); flash('Sample loaded'); });
-  armed($('clear'), 'Clear everything?', function () { setMenu(false); loadAll({ html: '', css: '', js: '' }); flash('Cleared'); ta.focus(); });
+  armed($('sample'), 'Replace all code?', function () { setMenu(false); detachProject(); loadAll(SAMPLE); flash('Sample loaded'); });
+  armed($('clear'), 'Clear everything?', function () { setMenu(false); detachProject(); loadAll({ html: '', css: '', js: '' }); flash('Cleared'); ta.focus(); });
+
+  /* ---------- Open a project folder ----------
+     Pick a folder that holds index.html, a CSS file and a JS file. The page is found first, then the
+     CSS and JS files it links to. Images and fonts are inlined so they show in the preview.
+     In Chrome and Edge the folder stays connected, so Save (Ctrl/Cmd + S) writes your edits back to it. */
+  var projEl = $('proj'), projName = $('proj-name'), saveBtn = $('save-folder'), folderInput = $('folder-input');
+  var IGNORE = /^(node_modules|dist|build|out|coverage|vendor)$/i;
+  var MAX_FILES = 3000, MAX_ASSET = 4 * 1024 * 1024, MAX_TOTAL = 40 * 1024 * 1024;
+  var MIME = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+    svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp',
+    woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+    mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', webm: 'video/webm'
+  };
+
+  function fileLabel(id) { return baseName(S.names[id]); }
+  function updateProjectUI() {
+    tabs.forEach(function (t) {
+      var n = S.names[t.dataset.id];
+      t.querySelector('.tn').textContent = baseName(n);
+      t.title = n;
+    });
+    projEl.hidden = !S.project;
+    projName.textContent = S.project || '';
+    projName.title = S.project ? (project.handle ? S.project : S.project + ' (open the folder again to load images and other files)') : '';
+    saveBtn.hidden = !project.handle;
+  }
+  function markDirty(on) { saveBtn.classList.toggle('dirty', !!on); }
+  function detachProject() {
+    project.handle = null; project.assets = {}; project.texts = {};
+    project.mapped = { html: true, css: true, js: true };
+    S.names = { html: 'index.html', css: 'style.css', js: 'script.js' };
+    S.project = '';
+    markDirty(false);
+    updateProjectUI();
+  }
+
+  function toDataUrl(file, type) {
+    return new Promise(function (resolve) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { resolve(null); };
+      r.readAsDataURL(type ? file.slice(0, file.size, type) : file);
+    });
+  }
+  async function walk(dir, prefix, out, depth) {
+    for await (var entry of dir.values()) {
+      if (out.length >= MAX_FILES) return;
+      if (entry.name.charAt(0) === '.') continue;
+      if (entry.kind === 'directory') {
+        if (depth < 6 && !IGNORE.test(entry.name)) await walk(entry, prefix + entry.name + '/', out, depth + 1);
+      } else {
+        out.push({ path: prefix + entry.name, file: await entry.getFile() });
+      }
+    }
+  }
+  function byDepth(a, b) { return a.split('/').length - b.split('/').length || a.localeCompare(b); }
+
+  async function openProject(entries, name, handle) {
+    flash('Reading ' + name + '...');
+    var map = {};
+    entries.forEach(function (e) { map[e.path] = e.file; });
+    var paths = Object.keys(map).sort(byDepth);
+    var htmls = paths.filter(function (p) { return /\.html?$/i.test(p); });
+    var htmlPath = htmls.filter(function (p) { return p.toLowerCase() === 'index.html'; })[0] ||
+      htmls.filter(function (p) { return /(^|\/)index\.html?$/i.test(p); })[0] || htmls[0];
+    if (!htmlPath) { flash('No HTML file found in ' + name); return; }
+
+    var html = await map[htmlPath].text();
+    var base = dirOf(htmlPath);
+    function refs(tagRe, attr, test) {
+      var out = [], m;
+      tagRe.lastIndex = 0;
+      while ((m = tagRe.exec(html))) {
+        if (test && !test.test(m[0])) continue;
+        var r = resolveRef(base, getAttr(m[0], attr));
+        if (r !== null && map[r] !== undefined) out.push(r);
+      }
+      return out;
+    }
+    function pick(list, names) {
+      for (var i = 0; i < names.length; i++) {
+        var f = list.filter(function (p) { return baseName(p).toLowerCase() === names[i]; })[0];
+        if (f) return f;
+      }
+      return null;
+    }
+    // Of the files the page links, prefer the usual names, otherwise the first one
+    var linkedCss = refs(/<link\b[^>]*>/gi, 'href', /rel\s*=\s*["']?stylesheet/i).filter(function (p) { return /\.css$/i.test(p); });
+    var linkedJs = refs(/<script\b[^>]*>/gi, 'src').filter(function (p) { return /\.m?js$/i.test(p); });
+    var cssPath = pick(linkedCss, ['style.css', 'styles.css', 'main.css', 'index.css', 'app.css']) || linkedCss[0] ||
+      pick(paths, ['style.css', 'styles.css', 'main.css', 'index.css']);
+    var jsPath = pick(linkedJs, ['script.js', 'main.js', 'app.js', 'index.js']) || linkedJs[0] ||
+      pick(paths, ['script.js', 'main.js', 'app.js', 'index.js']);
+
+    var assets = {}, texts = {}, total = 0, count = 0;
+    for (var i = 0; i < paths.length; i++) {
+      var p = paths[i], f = map[p];
+      if (p === htmlPath || p === cssPath || p === jsPath) continue;
+      var m = /\.([a-z0-9]+)$/i.exec(p), ext = m ? m[1].toLowerCase() : '';
+      if (ext === 'css' || ext === 'js' || ext === 'mjs') { if (f.size <= 2 * 1024 * 1024) texts[p] = await f.text(); }
+      else if (MIME[ext] && f.size <= MAX_ASSET && total + f.size <= MAX_TOTAL) {
+        var d = await toDataUrl(f, MIME[ext]);
+        if (d) { assets[p] = d; total += f.size; count++; }
+      }
+    }
+
+    S.files = { html: html, css: cssPath ? await map[cssPath].text() : '', js: jsPath ? await map[jsPath].text() : '' };
+    S.names = { html: htmlPath, css: cssPath || 'style.css', js: jsPath || 'script.js' };
+    S.project = name;
+    S.active = 'html';
+    project.handle = handle || null;
+    project.assets = assets; project.texts = texts;
+    project.mapped = { html: true, css: !!cssPath, js: !!jsPath };
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.id === 'html')); });
+    ta.value = S.files.html;
+    scrollMem = { html: 0, css: 0, js: 0 };
+    ta.scrollTop = 0;
+    render();
+    updateProjectUI();
+    markDirty(false);
+    save();
+    runPreview();
+    flash('Opened ' + name + ' (' + (paths.length) + ' files' + (handle ? ', Ctrl/Cmd + S saves' : '') + ')');
+  }
+
+  async function openFolder() {
+    setMenu(false);
+    if (window.showDirectoryPicker) {
+      try {
+        var dir = await window.showDirectoryPicker({ id: 'ctrlsaptam', mode: 'readwrite' });
+        var out = [];
+        await walk(dir, '', out, 0);
+        await openProject(out, dir.name, dir);
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        // blocked here (for example inside an embedded page): use the plain folder chooser instead
+      }
+    }
+    folderInput.click();
+  }
+  folderInput.addEventListener('change', async function () {
+    var list = Array.prototype.slice.call(folderInput.files || []);
+    folderInput.value = '';
+    if (!list.length) return;
+    var name = (list[0].webkitRelativePath || '').split('/')[0] || 'Project';
+    var entries = [];
+    list.forEach(function (f) {
+      var parts = (f.webkitRelativePath || f.name).split('/');
+      parts.shift();
+      var skip = parts.some(function (s, i) { return s.charAt(0) === '.' || (i < parts.length - 1 && IGNORE.test(s)); });
+      if (!skip && parts.length && parts.length <= 8 && entries.length < MAX_FILES) entries.push({ path: parts.join('/'), file: f });
+    });
+    await openProject(entries, name, null);
+  });
+  $('open-folder').addEventListener('click', openFolder);
+  $('open-folder-btn').addEventListener('click', openFolder);
+
+  async function fileHandleFor(root, path) {
+    var parts = path.split('/'), d = root;
+    for (var i = 0; i < parts.length - 1; i++) d = await d.getDirectoryHandle(parts[i]);
+    return d.getFileHandle(parts[parts.length - 1]);
+  }
+  async function saveProject() {
+    if (!project.handle) return;
+    var n = 0;
+    try {
+      for (var id of ['html', 'css', 'js']) {
+        if (!project.mapped[id]) continue;
+        var w = await (await fileHandleFor(project.handle, S.names[id])).createWritable();
+        await w.write(S.files[id]);
+        await w.close();
+        n++;
+      }
+      markDirty(false);
+      flash('Saved ' + n + (n === 1 ? ' file' : ' files') + ' to ' + S.project + ' at ' + stamp());
+    } catch (e) {
+      flash('Could not save: ' + (e && e.message ? e.message : 'permission denied'));
+    }
+  }
+  saveBtn.addEventListener('click', saveProject);
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && project.handle) {
+      e.preventDefault();
+      saveProject();
+    }
+  });
 
   /* ---------- Layout, phone frame, preview width ---------- */
   var appEl = $('app');
@@ -719,7 +985,7 @@
   }
   themeBtn.addEventListener('click', function () {
     S.theme = THEMES[(THEMES.indexOf(S.theme) + 1) % THEMES.length];
-    applyTheme(); save(); flash('Theme: ' + THEME_NAMES[S.theme]);
+    applyTheme(); save();
   });
 
   /* ---------- Divider (drag or arrow keys) ---------- */
@@ -766,6 +1032,7 @@
   render();
   if (['auto', 'light', 'dark'].indexOf(S.theme) < 0) S.theme = 'auto';
   applyTheme();
+  updateProjectUI();
   applyPhone();
   appEl.toggleAttribute('data-compact', appEl.clientWidth <= 820);
   appEl.toggleAttribute('data-tight', appEl.clientWidth <= 1000);
