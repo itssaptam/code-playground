@@ -200,27 +200,36 @@
   /* ---------- State ---------- */
   var KEY = 'ctrlsaptam-v1';
   var S = {
-    files: { html: SAMPLE.html, css: SAMPLE.css, js: SAMPLE.js },
+    files: { html: '', css: '', js: '' },                       // code of the open project
+    names: { html: 'index.html', css: 'style.css', js: 'script.js' },
     active: 'html', auto: true, layout: 'cols', split: 50, device: 'fit', phone: false, console: false, view: 'both', theme: 'auto',
-    names: { html: 'index.html', css: 'style.css', js: 'script.js' }, project: ''
+    mode: 'dash', curId: '', sort: 'recent'
   };
+  var legacy = null; // code saved by the older single-project version, moved into the dashboard on first run
   try {
     var raw = localStorage.getItem(KEY) || localStorage.getItem('code-playground-v1');
     if (raw) {
       var o = JSON.parse(raw);
+      ['active', 'auto', 'layout', 'split', 'device', 'phone', 'console', 'view', 'theme', 'mode', 'curId', 'sort'].forEach(function (k) { if (o[k] !== undefined) S[k] = o[k]; });
       if (o && o.files && typeof o.files.html === 'string' && typeof o.files.css === 'string' && typeof o.files.js === 'string') {
-        S.files = o.files;
-        ['active', 'auto', 'layout', 'split', 'device', 'phone', 'console', 'view', 'theme'].forEach(function (k) { if (o[k] !== undefined) S[k] = o[k]; });
-        if (o.names && typeof o.names.html === 'string' && typeof o.names.css === 'string' && typeof o.names.js === 'string') { S.names = o.names; S.project = typeof o.project === 'string' ? o.project : ''; }
+        var okNames = o.names && typeof o.names.html === 'string' && typeof o.names.css === 'string' && typeof o.names.js === 'string';
+        legacy = { files: o.files, names: okNames ? o.names : null, name: typeof o.project === 'string' ? o.project : '' };
       }
     }
   } catch (e) {}
-  var saveTimer;
-  function save() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }, 400);
+  if (S.mode !== 'editor') S.mode = 'dash';
+  if (S.sort !== 'name') S.sort = 'recent';
+  // Only settings go to localStorage. Projects live in IndexedDB (see "Projects: storage").
+  function persistUi() {
+    try {
+      var o = {};
+      Object.keys(S).forEach(function (k) { if (k !== 'files' && k !== 'names') o[k] = S[k]; });
+      localStorage.setItem(KEY, JSON.stringify(o));
+    } catch (e) {}
   }
-  window.addEventListener('pagehide', function () { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} });
+  var saveTimer;
+  function save() { clearTimeout(saveTimer); saveTimer = setTimeout(persistUi, 400); }
+  window.addEventListener('pagehide', persistUi);
 
   /* ---------- Elements ---------- */
   function $(id) { return document.getElementById(id); }
@@ -336,6 +345,7 @@
     if (history) { var p = ta.selectionEnd; ta.setSelectionRange(p, p); } // undo/redo: just a caret, no highlighted text
     S.files[S.active] = ta.value;
     if (project.handle) markDirty(true);
+    touchProject();
     render();
     if (history) {
       revealCaret();
@@ -475,8 +485,9 @@
   }
 
   /* ---------- Building the preview page ----------
-     The editor holds three files (HTML, CSS, JS). Everything else a folder project needs
-     (other CSS or JS files, images, fonts) is read once when the folder is opened and inlined here. */
+     A project is three editable files (HTML, CSS, JS). Everything else a folder project needs
+     (other CSS or JS files, images, fonts) is read once when the folder is opened and inlined here.
+     The same builder makes the live preview in the editor and the thumbnails on the dashboard. */
   var project = { handle: null, assets: {}, texts: {}, mapped: { html: true, css: true, js: true } };
 
   function normPath(p) {
@@ -502,18 +513,18 @@
     var m = new RegExp('\\b' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\')', 'i').exec(tag);
     return m ? (m[1] !== undefined ? m[1] : m[2]) : null;
   }
-  function fixAttrs(tag, names, base) {
+  function fixAttrs(tag, names, base, assets) {
     names.forEach(function (name) {
       tag = tag.replace(new RegExp('(\\b' + name + '\\s*=\\s*)(["\'])(.*?)\\2', 'i'), function (m, pre, q, v) {
-        var r = resolveRef(base, v), d = r !== null ? project.assets[r] : null;
+        var r = resolveRef(base, v), d = r !== null ? assets[r] : null;
         return d ? pre + q + d + q : m;
       });
     });
     return tag;
   }
-  function fixCssUrls(css, base) {
+  function fixCssUrls(css, base, assets) {
     return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, function (m, q, u) {
-      var r = resolveRef(base, u), d = r !== null ? project.assets[r] : null;
+      var r = resolveRef(base, u), d = r !== null ? assets[r] : null;
       return d ? 'url(' + d + ')' : m; // unquoted, so it is safe inside style="..." attributes too
     });
   }
@@ -522,20 +533,47 @@
     attrs = (attrs || '').replace(/\s*\bsrc\s*=\s*(?:"[^"]*"|'[^']*')/i, '').replace(/\s+(?:defer|async)(?=\s|$)/gi, '');
     return '<script' + attrs + '>' + js.replace(/<\/script/gi, '<\\/script') + '<\/script>';
   }
-  function cssForPreview() { return fixCssUrls(S.files.css, dirOf(normPath(S.names.css))); }
+  function cssForPreview() { return fixCssUrls(S.files.css, dirOf(normPath(S.names.css)), project.assets); }
 
-  function buildDoc() {
-    var html = S.files.html, css = S.files.css, js = S.files.js;
-    var base = dirOf(normPath(S.names.html));
-    var cssPath = normPath(S.names.css), jsPath = normPath(S.names.js);
+  // Runs inside every dashboard thumbnail: keeps pages from failing on blocked storage or opening dialogs
+  function miniHook() {
+    function mk() {
+      var m = {};
+      return {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(m, k) ? m[k] : null; },
+        setItem: function (k, v) { m[k] = String(v); },
+        removeItem: function (k) { delete m[k]; },
+        clear: function () { m = {}; },
+        key: function (i) { return Object.keys(m)[i] || null; },
+        get length() { return Object.keys(m).length; }
+      };
+    }
+    try { window.localStorage.getItem('x'); } catch (e) {
+      try {
+        Object.defineProperty(window, 'localStorage', { value: mk(), configurable: true });
+        Object.defineProperty(window, 'sessionStorage', { value: mk(), configurable: true });
+      } catch (_) {}
+    }
+    window.alert = window.confirm = window.prompt = function () { return null; };
+    window.addEventListener('error', function (e) { if (e.preventDefault) e.preventDefault(); });
+  }
+
+  var buildInfo = { usedCss: false };
+  // P = { files, names, assets, texts }. opts.thumb builds the quiet version used on the dashboard.
+  function buildDocFor(P, opts) {
+    opts = opts || {};
+    var html = P.files.html, css = P.files.css, js = P.files.js, assets = P.assets || {}, texts = P.texts || {};
+    var base = dirOf(normPath(P.names.html));
+    var cssPath = normPath(P.names.css), jsPath = normPath(P.names.js);
+    var cssFixed = fixCssUrls(css, dirOf(cssPath), assets);
     var usedCss = false, usedJs = false, deferred = [];
 
     var out = html.replace(/<link\b[^>]*>/gi, function (tag) {
-      if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) return fixAttrs(tag, ['href'], base);
+      if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) return fixAttrs(tag, ['href'], base, assets);
       var r = resolveRef(base, getAttr(tag, 'href'));
       if (r === null) return tag;
-      if (r === cssPath) { if (usedCss) return ''; usedCss = true; return styleTag(cssForPreview(), true); }
-      if (project.texts[r] !== undefined) return styleTag(fixCssUrls(project.texts[r], dirOf(r)));
+      if (r === cssPath) { if (usedCss) return ''; usedCss = true; return styleTag(cssFixed, true); }
+      if (texts[r] !== undefined) return styleTag(fixCssUrls(texts[r], dirOf(r), assets));
       return tag;
     });
 
@@ -544,7 +582,7 @@
       if (r === null) return tag;
       var code = null;
       if (r === jsPath) { if (usedJs) return ''; usedJs = true; code = js; }
-      else if (project.texts[r] !== undefined) code = project.texts[r];
+      else if (texts[r] !== undefined) code = texts[r];
       if (code === null) return tag;
       var tagOut = scriptTag(code, attrs);
       // an inline script cannot be "deferred", so run it at the end of the page instead
@@ -553,13 +591,13 @@
     });
 
     out = out.replace(/<(?:img|source|video|audio|track|input|embed)\b[^>]*>/gi, function (tag) {
-      return fixAttrs(tag, ['src', 'poster'], base);
+      return fixAttrs(tag, ['src', 'poster'], base, assets);
     });
 
     if (!usedCss && css.trim()) {
       usedCss = true;
-      if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, function (m) { return styleTag(cssForPreview(), true) + m; });
-      else out = styleTag(cssForPreview(), true) + out;
+      if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, function (m) { return styleTag(cssFixed, true) + m; });
+      else out = styleTag(cssFixed, true) + out;
     }
     if (!usedJs && js.trim()) deferred.push(scriptTag(js));
     if (deferred.length) {
@@ -567,14 +605,21 @@
       if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, function (m) { return tail + m; });
       else out = out + tail;
     }
-    out = fixCssUrls(out, base); // style="background: url(...)" written in the HTML itself
+    out = fixCssUrls(out, base, assets); // style="background: url(...)" written in the HTML itself
 
-    cssLive = usedCss;
-    var hookTag = '<script>(' + hook.toString() + ')(' + JSON.stringify(scrollPos) + ');<\/script>';
+    buildInfo.usedCss = usedCss;
+    var hookTag = opts.thumb
+      ? '<script>(' + miniHook.toString() + ')();<\/script>'
+      : '<script>(' + hook.toString() + ')(' + JSON.stringify(scrollPos) + ');<\/script>';
     if (/<head[^>]*>/i.test(out)) return out.replace(/<head[^>]*>/i, function (m) { return m + hookTag; });
     var dt = /^\s*<!doctype[^>]*>/i.exec(out);
     if (dt) return dt[0] + hookTag + out.slice(dt[0].length);
     return hookTag + out;
+  }
+  function buildDoc() {
+    var doc = buildDocFor({ files: S.files, names: S.names, assets: project.assets, texts: project.texts });
+    cssLive = buildInfo.usedCss;
+    return doc;
   }
 
   function stamp() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
@@ -709,19 +754,468 @@
     });
     function reset() { clearTimeout(timer); on = false; btn.textContent = idle; btn.classList.remove('armed'); }
   }
-  function loadAll(files) {
-    S.files = { html: files.html, css: files.css, js: files.js };
-    ta.value = S.files[S.active];
-    render(); save(); runPreview();
+  $('new-project').addEventListener('click', function () { setMenu(false); createProject('blank'); });
+  $('sample').addEventListener('click', function () { setMenu(false); createProject('sample'); });
+  armed($('clear'), 'Clear this code?', function () { setMenu(false); clearCurrent(); });
+
+  /* ---------- Projects: storage ----------
+     Every project lives in the browser's IndexedDB. The "projects" store holds the name and the three files,
+     the "blobs" store holds the heavy parts of a folder project (images, extra files, the folder link). */
+  var Store = (function () {
+    var dbp = null, ok = true, mem = { projects: {}, blobs: {} };
+    function open() {
+      if (!dbp) {
+        dbp = new Promise(function (resolve, reject) {
+          try {
+            var r = indexedDB.open('ctrlsaptam', 1);
+            r.onupgradeneeded = function () {
+              r.result.createObjectStore('projects', { keyPath: 'id' });
+              r.result.createObjectStore('blobs', { keyPath: 'id' });
+            };
+            r.onsuccess = function () { resolve(r.result); };
+            r.onerror = function () { reject(r.error); };
+            r.onblocked = function () { reject(new Error('blocked')); };
+          } catch (e) { reject(e); }
+        }).catch(function () { ok = false; return null; });
+      }
+      return dbp;
+    }
+    function withDb(useDb, useMem) { return open().then(function (db) { return db ? useDb(db) : useMem(); }); }
+    function tx(db, store, mode, fn) {
+      return new Promise(function (resolve, reject) {
+        var t = db.transaction(store, mode), r = fn(t.objectStore(store));
+        t.oncomplete = function () { resolve(r ? r.result : undefined); };
+        t.onerror = t.onabort = function () { reject(t.error || new Error('Storage failed')); };
+      });
+    }
+    return {
+      persistent: function () { return ok; },
+      ready: function () { return open(); },
+      all: function () {
+        return withDb(function (db) { return tx(db, 'projects', 'readonly', function (s) { return s.getAll(); }); },
+          function () { return Object.keys(mem.projects).map(function (k) { return mem.projects[k]; }); });
+      },
+      get: function (store, id) {
+        return withDb(function (db) { return tx(db, store, 'readonly', function (s) { return s.get(id); }); },
+          function () { return mem[store][id]; }).then(function (r) { return r || null; });
+      },
+      put: function (store, val) {
+        return withDb(function (db) { return tx(db, store, 'readwrite', function (s) { return s.put(val); }); },
+          function () { mem[store][val.id] = val; });
+      },
+      del: function (id) {
+        return withDb(function (db) {
+          return new Promise(function (resolve, reject) {
+            var t = db.transaction(['projects', 'blobs'], 'readwrite');
+            t.objectStore('projects').delete(id);
+            t.objectStore('blobs').delete(id);
+            t.oncomplete = function () { resolve(); };
+            t.onerror = t.onabort = function () { reject(t.error || new Error('Storage failed')); };
+          });
+        }, function () { delete mem.projects[id]; delete mem.blobs[id]; });
+      }
+    };
+  })();
+
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function defaultNames() { return { html: 'index.html', css: 'style.css', js: 'script.js' }; }
+  function cloneFiles(f) { return { html: f.html, css: f.css, js: f.js }; }
+  var STARTER = {
+    html: [
+      '<!DOCTYPE html>',
+      '<html lang="en">',
+      '<head>',
+      '  <meta charset="UTF-8">',
+      '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+      '  <title>New Project</title>',
+      '  <link rel="stylesheet" href="style.css">',
+      '</head>',
+      '<body>',
+      '  <h1>Hello, CtrlSaptam</h1>',
+      '  <p>Edit the code and watch this page change.</p>',
+      '',
+      '  <script src="script.js"><\/script>',
+      '</body>',
+      '</html>'
+    ].join('\n'),
+    css: [
+      'body {',
+      '  min-height: 100vh;',
+      '  margin: 0;',
+      '  display: grid;',
+      '  place-content: center;',
+      '  gap: 8px;',
+      '  text-align: center;',
+      '  background: #0f172a;',
+      '  color: #e2e8f0;',
+      '  font-family: system-ui, sans-serif;',
+      '}',
+      'h1 { margin: 0; font-size: 2.4rem; }',
+      'p { margin: 0; color: #94a3b8; }'
+    ].join('\n'),
+    js: "console.log('Hello from script.js');"
+  };
+
+  // The project that is open in the editor. Its files are S.files and S.names.
+  var cur = { id: '', name: '', folder: false, created: 0, updated: 0 };
+  var pending = false, persistTimer = 0;
+  function metaRecord() {
+    return { id: cur.id, name: cur.name, folder: cur.folder, created: cur.created, updated: cur.updated, files: cloneFiles(S.files), names: { html: S.names.html, css: S.names.css, js: S.names.js } };
   }
-  armed($('sample'), 'Replace all code?', function () { setMenu(false); detachProject(); loadAll(SAMPLE); flash('Sample loaded'); });
-  armed($('clear'), 'Clear everything?', function () { setMenu(false); detachProject(); loadAll({ html: '', css: '', js: '' }); flash('Cleared'); ta.focus(); });
+  function touchProject() {
+    if (!cur.id) return;
+    pending = true;
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(flushProject, 600);
+  }
+  function flushProject() {
+    clearTimeout(persistTimer);
+    if (!pending || !cur.id) return Promise.resolve();
+    pending = false;
+    cur.updated = Date.now();
+    return Store.put('projects', metaRecord()).catch(function () { flash('Could not save this project in the browser'); });
+  }
+  function saveBlobs() {
+    if (!cur.id) return Promise.resolve();
+    var rec = { id: cur.id, assets: project.assets, texts: project.texts, mapped: project.mapped };
+    if (project.handle) rec.handle = project.handle;
+    return Store.put('blobs', rec).catch(function () {
+      delete rec.handle; // some browsers cannot store a folder link
+      return Store.put('blobs', rec).catch(function () {});
+    });
+  }
+  window.addEventListener('pagehide', function () { flushProject(); });
+
+  /* ---------- Projects: opening, creating, leaving ---------- */
+  var startMode = S.mode;
+  function showMode(mode) {
+    appEl.dataset.mode = mode;
+    dashEl.hidden = mode !== 'dash';
+    stage.hidden = mode !== 'editor';
+    if (mode !== 'dash') { if (thumbObserver) thumbObserver.disconnect(); grid.textContent = ''; cards = []; }
+  }
+  function setMode(mode) { S.mode = mode; showMode(mode); save(); }
+
+  async function enterEditor(id) {
+    await flushProject();
+    var rec = await Store.get('projects', id);
+    if (!rec) { await goDashboard(); return; }
+    var blobs = (await Store.get('blobs', id)) || {};
+    cur = { id: rec.id, name: rec.name, folder: !!rec.folder, created: rec.created, updated: rec.updated };
+    S.files = cloneFiles(rec.files);
+    S.names = rec.names || defaultNames();
+    S.curId = id; S.active = 'html';
+    project.handle = blobs.handle || null;
+    project.assets = blobs.assets || {};
+    project.texts = blobs.texts || {};
+    project.mapped = blobs.mapped || { html: true, css: true, js: true };
+    pending = false;
+    setMode('editor');
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.id === 'html')); });
+    scrollMem = { html: 0, css: 0, js: 0 };
+    ta.value = S.files.html;
+    ta.scrollTop = 0;
+    render();
+    updateProjectUI();
+    markDirty(false);
+    clearTimeout(timers.full);
+    runPreview();
+  }
+
+  async function goDashboard() {
+    clearTimeout(timers.full); clearTimeout(timers.css);
+    await flushProject();
+    frameA.srcdoc = frameB.srcdoc = '<!doctype html><title></title>'; // stop the editor preview while you are away
+    setMode('dash');
+    flash('');
+    await renderDashboard();
+  }
+
+  async function uniqueName(base) {
+    var names = (await Store.all()).map(function (r) { return r.name; });
+    if (names.indexOf(base) < 0) return base;
+    for (var i = 2; ; i++) if (names.indexOf(base + ' ' + i) < 0) return base + ' ' + i;
+  }
+  async function createProject(kind) {
+    var now = Date.now();
+    var rec = {
+      id: uid(), name: await uniqueName(kind === 'sample' ? 'Neumorphic Sign Up' : 'Untitled project'), folder: false,
+      created: now, updated: now, files: cloneFiles(kind === 'sample' ? SAMPLE : STARTER), names: defaultNames()
+    };
+    await Store.put('projects', rec);
+    await enterEditor(rec.id);
+  }
+  async function renameProject(id, name) {
+    var rec = await Store.get('projects', id);
+    if (!rec) return;
+    rec.name = name;
+    await Store.put('projects', rec);
+    if (cur.id === id) { cur.name = name; updateProjectUI(); }
+  }
+  async function duplicateProject(id) {
+    var rec = await Store.get('projects', id);
+    if (!rec) return null;
+    var blobs = await Store.get('blobs', id);
+    var now = Date.now();
+    var copy = { id: uid(), name: await uniqueName(rec.name + ' copy'), folder: false, created: now, updated: now, files: cloneFiles(rec.files), names: rec.names };
+    await Store.put('projects', copy);
+    if (blobs) await Store.put('blobs', { id: copy.id, assets: blobs.assets || {}, texts: blobs.texts || {}, mapped: blobs.mapped }).catch(function () {});
+    return copy;
+  }
+  async function removeProject(id) {
+    await Store.del(id);
+    if (cur.id === id) { cur = { id: '', name: '', folder: false, created: 0, updated: 0 }; pending = false; }
+    if (S.curId === id) { S.curId = ''; save(); }
+  }
+  function clearCurrent() {
+    project.handle = null; project.assets = {}; project.texts = {};
+    project.mapped = { html: true, css: true, js: true };
+    S.names = defaultNames(); cur.folder = false;
+    S.files = { html: '', css: '', js: '' };
+    ta.value = '';
+    render(); updateProjectUI(); markDirty(false);
+    touchProject(); saveBlobs();
+    runPreview();
+    flash('Cleared');
+    ta.focus();
+  }
+
+  /* ---------- Dashboard ---------- */
+  var dashEl = $('dash'), grid = $('grid'), searchEl = $('dash-search');
+  var cards = [], thumbObserver = null, dashToken = 0;
+  var ICON = {
+    folder: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    plus: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+    pencil: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+    copy: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
+    trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>'
+  };
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function iconBtn(cls, label, svg) {
+    var b = el('button', 'icon-btn ' + cls);
+    b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.innerHTML = svg;
+    return b;
+  }
+  function ago(ts) {
+    var s = Math.max(0, (Date.now() - ts) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+    if (s < 7 * 86400) return Math.floor(s / 86400) + ' d ago';
+    return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric', year: s > 300 * 86400 ? 'numeric' : undefined });
+  }
+
+  function loadThumb(card, rec) {
+    Store.get('blobs', rec.id).then(function (blobs) {
+      if (!card.isConnected) return;
+      blobs = blobs || {};
+      var f = document.createElement('iframe');
+      f.className = 'thumb-frame';
+      f.setAttribute('sandbox', 'allow-scripts');
+      f.setAttribute('aria-hidden', 'true');
+      f.tabIndex = -1;
+      f.title = rec.name + ' preview';
+      f.addEventListener('load', function () { card.classList.add('ready'); });
+      f.srcdoc = buildDocFor({ files: rec.files, names: rec.names || defaultNames(), assets: blobs.assets, texts: blobs.texts }, { thumb: true });
+      card.querySelector('.thumb-in').appendChild(f);
+      setTimeout(function () { card.classList.add('ready'); }, 2500); // show it even if a slow font keeps the page loading
+    });
+  }
+
+  function startRename(rec, open) {
+    var input = el('input', 'card-rename');
+    input.value = rec.name;
+    input.setAttribute('aria-label', 'Project name');
+    input.maxLength = 80;
+    open.replaceWith(input);
+    input.focus(); input.select();
+    var done = false;
+    function finish(commit) {
+      if (done) return;
+      done = true;
+      var v = input.value.trim();
+      input.replaceWith(open);
+      if (commit && v && v !== rec.name) {
+        rec.name = v; open.textContent = v; open.title = v;
+        renameProject(rec.id, v);
+        applyDashFilter();
+      }
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', function () { finish(true); });
+  }
+
+  function cardFor(rec) {
+    var card = el('article', 'card');
+    card.dataset.id = rec.id;
+    var blank = !(rec.files.html.trim() || rec.files.css.trim() || rec.files.js.trim());
+
+    var thumb = el('div', 'thumb');
+    thumb.appendChild(el('div', 'thumb-in'));
+    thumb.appendChild(el('div', 'thumb-note', blank ? 'Empty project' : 'Loading preview'));
+    if (rec.folder) { var tag = el('span', 'thumb-tag'); tag.innerHTML = ICON.folder + 'Folder'; thumb.appendChild(tag); }
+
+    var body = el('div', 'card-body'), top = el('div', 'card-top');
+    var open = el('button', 'card-open', rec.name);
+    open.type = 'button'; open.title = rec.name;
+    open.addEventListener('click', function () { enterEditor(rec.id); });
+
+    var acts = el('div', 'card-actions');
+    var ren = iconBtn('', 'Rename', ICON.pencil), dup = iconBtn('', 'Duplicate', ICON.copy), del = iconBtn('danger', 'Delete', ICON.trash);
+    ren.addEventListener('click', function () { startRename(rec, card.querySelector('.card-open')); });
+    dup.addEventListener('click', async function () {
+      var copy = await duplicateProject(rec.id);
+      if (copy) { addCard(copy); applyDashFilter(); }
+    });
+    var delTimer;
+    function disarm() { clearTimeout(delTimer); del.classList.remove('armed'); del.innerHTML = ICON.trash; del.setAttribute('aria-label', 'Delete'); }
+    del.addEventListener('click', async function () {
+      if (!del.classList.contains('armed')) {
+        del.classList.add('armed'); del.textContent = 'Delete?'; del.setAttribute('aria-label', 'Confirm delete');
+        delTimer = setTimeout(disarm, 3000);
+        return;
+      }
+      disarm();
+      await removeProject(rec.id);
+      if (thumbObserver) thumbObserver.unobserve(card);
+      card.remove();
+      cards = cards.filter(function (c) { return c.node !== card; });
+      applyDashFilter();
+    });
+    del.addEventListener('blur', disarm);
+    acts.appendChild(ren); acts.appendChild(dup); acts.appendChild(del);
+    top.appendChild(open); top.appendChild(acts);
+
+    var meta = el('div', 'card-meta');
+    meta.appendChild(el('span', '', 'Edited ' + ago(rec.updated)));
+    var chips = el('span', 'chips');
+    [['HTML', 'html'], ['CSS', 'css'], ['JS', 'js']].forEach(function (c) {
+      if (rec.files[c[1]].trim()) chips.appendChild(el('span', 'chip', c[0]));
+    });
+    meta.appendChild(chips);
+    body.appendChild(top); body.appendChild(meta);
+    card.appendChild(thumb); card.appendChild(body);
+    card._load = blank ? null : function () { loadThumb(card, rec); };
+    return card;
+  }
+
+  function addCard(rec) {
+    var node = cardFor(rec);
+    cards.push({ rec: rec, node: node });
+    grid.appendChild(node);
+    if (node._load && thumbObserver) thumbObserver.observe(node);
+    else if (node._load) node._load();
+    return node;
+  }
+
+  function tile(cls, svg, title, hint, onClick) {
+    var b = el('button', 'tile ' + cls);
+    b.type = 'button';
+    b.innerHTML = svg;
+    b.appendChild(el('strong', '', title));
+    b.appendChild(el('small', '', hint));
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function byRecent(a, b) { return b.rec.updated - a.rec.updated; }
+  function byName(a, b) { return a.rec.name.localeCompare(b.rec.name, undefined, { sensitivity: 'base' }); }
+  function applyDashFilter() {
+    var q = searchEl.value.trim().toLowerCase(), shown = 0;
+    cards.slice().sort(S.sort === 'name' ? byName : byRecent).forEach(function (c, i) {
+      var ok = !q || c.rec.name.toLowerCase().indexOf(q) >= 0;
+      c.node.style.order = i;
+      c.node.hidden = !ok;
+      if (ok) shown++;
+    });
+    Array.prototype.forEach.call(grid.querySelectorAll('.tile'), function (t) { t.hidden = !!q; });
+    $('dash-count').textContent = q ? shown + ' of ' + cards.length : cards.length + (cards.length === 1 ? ' project' : ' projects');
+    var note = $('dash-note');
+    note.hidden = !(q && !shown);
+    if (q && !shown) note.textContent = 'No project matches "' + searchEl.value.trim() + '".';
+    Array.prototype.forEach.call(document.querySelectorAll('#dash-sort [data-sort]'), function (b) { b.setAttribute('aria-pressed', String(b.dataset.sort === S.sort)); });
+    updateThumbScale();
+  }
+
+  // The thumbnails render the page at 1280 x 800 and are scaled down to the card
+  function updateThumbScale() {
+    var thumbs = grid.querySelectorAll('.thumb');
+    for (var i = 0; i < thumbs.length; i++) {
+      if (thumbs[i].clientWidth > 0) { grid.style.setProperty('--s', (thumbs[i].clientWidth / 1280).toFixed(4)); return; }
+    }
+  }
+  if (window.ResizeObserver) new ResizeObserver(updateThumbScale).observe(grid);
+
+  async function renderDashboard() {
+    var token = ++dashToken;
+    var list = await Store.all();
+    if (token !== dashToken || S.mode !== 'dash') return;
+    if (thumbObserver) thumbObserver.disconnect();
+    grid.textContent = '';
+    cards = [];
+    if ('IntersectionObserver' in window) {
+      thumbObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          thumbObserver.unobserve(e.target);
+          if (e.target._load) e.target._load();
+        });
+      }, { root: dashEl, rootMargin: '300px' });
+    } else thumbObserver = null;
+
+    grid.appendChild(tile('tile-new', ICON.plus, 'New project', 'Start with a blank page', function () { createProject('blank'); }));
+    grid.appendChild(tile('tile-open', ICON.folder.replace(/width="16" height="16"/, 'width="26" height="26"'), 'Open folder', 'Load a folder with index.html, style.css and script.js', openFolder));
+    list.forEach(addCard);
+    applyDashFilter();
+
+    var note = $('dash-persist');
+    note.hidden = Store.persistent();
+    if (!Store.persistent()) note.textContent = 'This browser is not letting CtrlSaptam keep projects (a private window, for example). They will be lost when you close this tab.';
+  }
+
+  searchEl.addEventListener('input', applyDashFilter);
+  Array.prototype.forEach.call(document.querySelectorAll('#dash-sort [data-sort]'), function (b) {
+    b.addEventListener('click', function () { S.sort = b.dataset.sort; save(); applyDashFilter(); });
+  });
+  $('brand').addEventListener('click', function () {
+    if (S.mode === 'dash') { dashEl.scrollTop = 0; return; }
+    goDashboard();
+  });
+  $('dash-new').addEventListener('click', function () { createProject('blank'); });
+  $('dash-open').addEventListener('click', function () { openFolder(); });
+
+  /* ---------- First run ---------- */
+  async function seedProjects() {
+    var now = Date.now();
+    await Store.put('projects', { id: uid(), name: 'Neumorphic Sign Up', folder: false, created: now - 1000, updated: now - 1000, files: cloneFiles(SAMPLE), names: defaultNames() });
+    // code from the older single-project version becomes the first project
+    if (legacy && (legacy.files.html !== SAMPLE.html || legacy.files.css !== SAMPLE.css || legacy.files.js !== SAMPLE.js)) {
+      await Store.put('projects', { id: uid(), name: legacy.name || 'My project', folder: false, created: now, updated: now, files: cloneFiles(legacy.files), names: legacy.names || defaultNames() });
+    }
+  }
+  async function init() {
+    try {
+      var list = await Store.all();
+      if (!list.length) await seedProjects();
+    } catch (e) {}
+    var rec = startMode === 'editor' && S.curId ? await Store.get('projects', S.curId) : null;
+    if (rec) await enterEditor(S.curId);
+    else { setMode('dash'); await renderDashboard(); }
+  }
 
   /* ---------- Open a project folder ----------
      Pick a folder that holds index.html, a CSS file and a JS file. The page is found first, then the
      CSS and JS files it links to. Images and fonts are inlined so they show in the preview.
      In Chrome and Edge the folder stays connected, so Save (Ctrl/Cmd + S) writes your edits back to it. */
-  var projEl = $('proj'), projName = $('proj-name'), saveBtn = $('save-folder'), folderInput = $('folder-input');
+  var projEl = $('proj'), projName = $('proj-name'), projIcon = projEl.querySelector('svg'), saveBtn = $('save-folder'), folderInput = $('folder-input');
   var IGNORE = /^(node_modules|dist|build|out|coverage|vendor)$/i;
   var MAX_FILES = 3000, MAX_ASSET = 4 * 1024 * 1024, MAX_TOTAL = 40 * 1024 * 1024;
   var MIME = {
@@ -738,20 +1232,13 @@
       t.querySelector('.tn').textContent = baseName(n);
       t.title = n;
     });
-    projEl.hidden = !S.project;
-    projName.textContent = S.project || '';
-    projName.title = S.project ? (project.handle ? S.project : S.project + ' (open the folder again to load images and other files)') : '';
+    projEl.hidden = !cur.id;
+    projName.textContent = cur.name;
+    projIcon.hidden = !cur.folder;
+    projName.title = cur.name + (cur.folder ? (project.handle ? ' (connected to your folder)' : ' (copy of a folder, open the folder again to save to it)') : '');
     saveBtn.hidden = !project.handle;
   }
   function markDirty(on) { saveBtn.classList.toggle('dirty', !!on); }
-  function detachProject() {
-    project.handle = null; project.assets = {}; project.texts = {};
-    project.mapped = { html: true, css: true, js: true };
-    S.names = { html: 'index.html', css: 'style.css', js: 'script.js' };
-    S.project = '';
-    markDirty(false);
-    updateProjectUI();
-  }
 
   function toDataUrl(file, type) {
     return new Promise(function (resolve) {
@@ -823,23 +1310,21 @@
       }
     }
 
-    S.files = { html: html, css: cssPath ? await map[cssPath].text() : '', js: jsPath ? await map[jsPath].text() : '' };
-    S.names = { html: htmlPath, css: cssPath || 'style.css', js: jsPath || 'script.js' };
-    S.project = name;
-    S.active = 'html';
-    project.handle = handle || null;
-    project.assets = assets; project.texts = texts;
-    project.mapped = { html: true, css: !!cssPath, js: !!jsPath };
-    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.id === 'html')); });
-    ta.value = S.files.html;
-    scrollMem = { html: 0, css: 0, js: 0 };
-    ta.scrollTop = 0;
-    render();
-    updateProjectUI();
-    markDirty(false);
-    save();
-    runPreview();
-    flash('Opened ' + name + ' (' + (paths.length) + ' files' + (handle ? ', Ctrl/Cmd + S saves' : '') + ')');
+    var now = Date.now();
+    var existing = (await Store.all()).filter(function (r) { return r.folder && r.name === name; })[0];
+    var rec = {
+      id: existing ? existing.id : uid(), name: name, folder: true,
+      created: existing ? existing.created : now, updated: now,
+      files: { html: html, css: cssPath ? await map[cssPath].text() : '', js: jsPath ? await map[jsPath].text() : '' },
+      names: { html: htmlPath, css: cssPath || 'style.css', js: jsPath || 'script.js' }
+    };
+    await Store.put('projects', rec);
+    var blobs = { id: rec.id, assets: assets, texts: texts, mapped: { html: true, css: !!cssPath, js: !!jsPath } };
+    if (handle) blobs.handle = handle;
+    await Store.put('blobs', blobs).catch(function () { delete blobs.handle; return Store.put('blobs', blobs); });
+    await enterEditor(rec.id);
+    if (handle && !project.handle) { project.handle = handle; updateProjectUI(); } // keep saving possible even if the browser could not store the link
+    flash('Opened ' + name + ' (' + paths.length + ' files' + (handle ? ', Ctrl/Cmd + S saves' : '') + ')');
   }
 
   async function openFolder() {
@@ -881,25 +1366,31 @@
     return d.getFileHandle(parts[parts.length - 1]);
   }
   async function saveProject() {
-    if (!project.handle) return;
+    if (!project.handle || S.mode !== 'editor') return;
     var n = 0;
     try {
+      var h = project.handle;
+      if (h.queryPermission) {
+        var perm = await h.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted' && h.requestPermission) perm = await h.requestPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') { flash('Allow access to the folder to save'); return; }
+      }
       for (var id of ['html', 'css', 'js']) {
         if (!project.mapped[id]) continue;
-        var w = await (await fileHandleFor(project.handle, S.names[id])).createWritable();
+        var w = await (await fileHandleFor(h, S.names[id])).createWritable();
         await w.write(S.files[id]);
         await w.close();
         n++;
       }
       markDirty(false);
-      flash('Saved ' + n + (n === 1 ? ' file' : ' files') + ' to ' + S.project + ' at ' + stamp());
+      flash('Saved ' + n + (n === 1 ? ' file' : ' files') + ' to ' + cur.name + ' at ' + stamp());
     } catch (e) {
       flash('Could not save: ' + (e && e.message ? e.message : 'permission denied'));
     }
   }
   saveBtn.addEventListener('click', saveProject);
   document.addEventListener('keydown', function (e) {
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && project.handle) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && project.handle && S.mode === 'editor') {
       e.preventDefault();
       saveProject();
     }
@@ -972,20 +1463,21 @@
   else window.addEventListener('resize', checkCompact);
 
   /* ---------- Theme: one button cycles Auto (follows the device), Light, Dark ---------- */
-  var themeBtn = $('theme');
+  var themeBtns = Array.prototype.slice.call(document.querySelectorAll('.theme-btn'));
   var THEMES = ['auto', 'light', 'dark'];
   var THEME_NAMES = { auto: 'follow device', light: 'light', dark: 'dark' };
   function applyTheme() {
     var root = document.documentElement;
     if (S.theme === 'light' || S.theme === 'dark') root.setAttribute('data-theme', S.theme);
     else root.removeAttribute('data-theme');
-    themeBtn.dataset.state = S.theme;
     var label = 'Theme: ' + THEME_NAMES[S.theme];
-    themeBtn.title = label; themeBtn.setAttribute('aria-label', label);
+    themeBtns.forEach(function (b) { b.dataset.state = S.theme; b.title = label; b.setAttribute('aria-label', label); });
   }
-  themeBtn.addEventListener('click', function () {
-    S.theme = THEMES[(THEMES.indexOf(S.theme) + 1) % THEMES.length];
-    applyTheme(); save();
+  themeBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.theme = THEMES[(THEMES.indexOf(S.theme) + 1) % THEMES.length];
+      applyTheme(); save();
+    });
   });
 
   /* ---------- Divider (drag or arrow keys) ---------- */
@@ -1041,5 +1533,6 @@
   applyDevice();
   clearConsole();
   setConsole(!!S.console);
-  runPreview();
+  showMode('dash');
+  init();
 })();
