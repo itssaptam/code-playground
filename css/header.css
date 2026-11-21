@@ -1,0 +1,35 @@
+/* header.css: the top bar (logo, Code/Both/Preview, actions) and its narrow-screen modes. Used by both pages. */
+
+/* Toolbar */
+/* Toolbar: brand left, Code/Both/Preview centred, actions right. On narrow widths it becomes two rows. */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px 16px; }
+.brand { justify-self: start; }
+.view-seg { justify-self: center; }
+.actions { justify-self: end; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand { text-decoration: none; padding: 4px 8px 4px 4px; margin: -4px 0 -4px -4px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.brand:hover { background: var(--panel-2); }
+.brand-name { font: 700 18px/1 var(--font-display); letter-spacing: -0.02em; }
+.brand-name span { color: var(--muted); font-weight: 600; }
+.logo { width: 32px; height: 32px; flex: none; display: block; }
+.logo-bg { fill: var(--accent); }
+.logo-s { fill: none; stroke: var(--accent-fg); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+.logo-cursor { fill: var(--accent-fg); opacity: .85; }
+.actions { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.act-main, .act-tools { display: flex; align-items: center; gap: 8px; }
+.act-main { min-width: 0; }
+
+/* Compact mode: set by script.js whenever the app is 820px wide or less (phones, and the Phone frame) */
+.app[data-compact] .lo-h,
+.app[data-compact] .dev-seg,
+.app[data-compact] .status { display: none; }
+.app[data-compact] .view-seg button { min-width: 0; padding: 0 10px; }
+.app[data-compact] .act-main, .app[data-compact] .act-tools { gap: 6px; }
+.app[data-compact] .actions { gap: 8px; }
+/* Two-row toolbar when the window is not wide enough for one row (also used on phones) */
+.app[data-compact] .top, .app[data-tight] .top { grid-template-columns: minmax(0, 1fr) auto; }
+.app[data-compact] .brand, .app[data-tight] .brand { grid-column: 1; grid-row: 1; }
+.app[data-compact] .view-seg, .app[data-tight] .view-seg { grid-column: 2; grid-row: 1; justify-self: end; }
+.app[data-compact] .actions, .app[data-tight] .actions { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; justify-content: space-between; }
+.app[data-compact] .brand-name { font-size: 16px; }
+.app[data-compact] .logo { width: 28px; height: 28px; }

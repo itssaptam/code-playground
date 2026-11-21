@@ -1,0 +1,47 @@
+/* layout.css: the Phone (9:16) frame, editor/preview panes, divider and the Code/Both/Preview views. */
+
+/* Phone frame: the whole app becomes a 9:16 column, handy for screen recordings. */
+.app.phone {
+  aspect-ratio: 9 / 16;
+  max-width: 100%;
+  margin-inline: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  background: var(--bg);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+}
+
+
+/* Stage: the grid tracks are set from script.js, so the divider can be dragged in any layout */
+.stage { flex: 1; min-height: 0; display: grid; }
+.stage .editor-pane { order: 1; }
+.stage .resizer { order: 2; }
+.stage .preview-pane { order: 3; }
+.stage[data-rev="1"] .editor-pane { order: 3; }
+.stage[data-rev="1"] .preview-pane { order: 1; }
+.pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+
+.resizer { position: relative; touch-action: none; }
+.resizer::after { content: ""; position: absolute; border-radius: 2px; background: var(--line); transition: background .15s; }
+.stage[data-dir="cols"] .resizer { cursor: col-resize; }
+.stage[data-dir="cols"] .resizer::after { top: 50%; left: 3px; width: 4px; height: 44px; transform: translateY(-50%); }
+.stage[data-dir="rows"] .resizer { cursor: row-resize; }
+.stage[data-dir="rows"] .resizer::after { left: 50%; top: 3px; height: 4px; width: 44px; transform: translateX(-50%); }
+.resizer:hover::after, .resizer:focus-visible::after, .stage.dragging .resizer::after { background: var(--accent); }
+.stage.dragging { user-select: none; }
+.stage.dragging .frames iframe { pointer-events: none !important; }
+
+
+/* Code / Both / Preview: works at every width. Hidden pane and divider go away, the other pane fills the stage. */
+.stage[data-view="code"] .preview-pane,
+.stage[data-view="code"] .resizer,
+.stage[data-view="preview"] .editor-pane,
+.stage[data-view="preview"] .resizer { display: none; }
+.stage[data-view="code"],
+.stage[data-view="preview"] { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) !important; }
+.app[data-compact] .console { height: 130px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}
