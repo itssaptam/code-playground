@@ -41,3 +41,11 @@
 .menu .item { height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; text-align: left; font-size: 13px; font-weight: 500; }
 .menu .item:hover { background: var(--panel-2); }
 .menu .item.armed { color: var(--err); background: var(--err-bg); }
+
+/* Open chooser and drag-and-drop hint */
+.menu.pop { position: fixed; right: auto; }
+.drop-hint {
+  position: fixed; inset: 12px; z-index: 60; display: grid; place-items: center; text-align: center; padding: 24px;
+  border: 2px dashed var(--accent); border-radius: 16px; background: color-mix(in srgb, var(--bg) 86%, transparent);
+  color: var(--accent); font-size: 17px; font-weight: 600; pointer-events: none;
+}

@@ -190,7 +190,7 @@ async function renderDashboard() {
   } else thumbObserver = null;
 
   grid.appendChild(tile('tile-new', ICON.plus, 'New project', 'Start with a blank page', function () { createProject('blank'); }));
-  grid.appendChild(tile('tile-open', ICON.folder.replace(/width="16" height="16"/, 'width="26" height="26"'), 'Open folder', 'Load a folder with index.html, style.css and script.js', openFolder));
+  grid.appendChild(tile('tile-open', ICON.folder.replace(/width="16" height="16"/, 'width="26" height="26"'), 'Open folder or zip', 'Load a project folder or a .zip file (you can also drop it here)', function (e) { openChooser(e.currentTarget); }));
   list.forEach(addCard);
   applyDashFilter();
   if (window.showStorage) showStorage();

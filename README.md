@@ -30,7 +30,8 @@ js/
   projects.js      create / rename / duplicate / delete projects
   hooks.js         small scripts injected into the previewed page
   builder.js       turns a project into one runnable page
-  folder-import.js open a project folder
+  zip.js           reads .zip files (no library)
+  folder-import.js open a folder or zip, drag and drop
   storage.js       storage usage, keep-safe request, backup / restore   (dashboard)
   dashboard.js     project cards and thumbnails                         (dashboard)
   dashboard-page.js starts the dashboard
@@ -53,3 +54,7 @@ js/
 - The dashboard shows how much space projects use. **Keep my projects safe** asks the browser not to clear them automatically.
 - **Backup** downloads all projects as one `.json` file, **Restore** loads it back. Do this now and then.
 - Projects opened from a folder (Chrome/Edge) can also be saved back into the real folder with Ctrl/Cmd + S.
+
+## Opening projects
+**Open** on the dashboard (or the editor's More menu) takes a project **folder** or a **.zip** file. You can also drag a folder or zip onto the page.
+A zip may contain the files directly or inside one wrapping folder. Zip projects are copies: to save back to disk use a folder in Chrome/Edge.

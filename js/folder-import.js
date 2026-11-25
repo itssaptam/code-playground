@@ -129,4 +129,97 @@ folderInput.addEventListener('change', async function () {
   await openProject(entries, name, null);
 });
 on('open-folder-btn', 'click', openFolder);
-on('dash-open', 'click', openFolder);
+
+/* ---------- Zip files ---------- */
+var zipInput = $('zip-input');
+async function openZipFile(file) {
+  try {
+    flash('Reading ' + file.name + '...');
+    var z = await readZip(file);
+    await openProject(z.entries, z.name || 'Project', null);
+  } catch (e) { flash(e && e.message ? e.message : 'Could not open that zip'); }
+}
+function openZip() { zipInput.click(); }
+zipInput.addEventListener('change', function () {
+  var f = zipInput.files && zipInput.files[0];
+  zipInput.value = '';
+  if (f) openZipFile(f);
+});
+
+/* ---------- "Open" chooser (folder or zip), used by the dashboard ---------- */
+var chooser = null;
+function closeChooser() { if (chooser) { chooser.remove(); chooser = null; } }
+function openChooser(anchor) {
+  if (chooser) { closeChooser(); return; }
+  chooser = el('div', 'menu pop');
+  [['Folder...', openFolder], ['Zip file...', openZip]].forEach(function (it) {
+    var b = el('button', 'item', it[0]);
+    b.type = 'button';
+    b.addEventListener('click', function () { closeChooser(); it[1](); });
+    chooser.appendChild(b);
+  });
+  document.body.appendChild(chooser);
+  var r = anchor.getBoundingClientRect();
+  chooser.style.top = (r.bottom + 6) + 'px';
+  chooser.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 190)) + 'px';
+  chooser.querySelector('button').focus();
+}
+document.addEventListener('click', function (e) {
+  if (chooser && !chooser.contains(e.target) && !e.target.closest('#dash-open, .tile-open')) closeChooser();
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeChooser(); });
+on('dash-open', 'click', function (e) { openChooser(e.currentTarget); });
+
+/* ---------- Drag a folder or a zip onto the page ---------- */
+var dropHint = el('div', 'drop-hint', 'Drop a project folder or a .zip file to open it');
+dropHint.hidden = true;
+document.body.appendChild(dropHint);
+var dragDepth = 0;
+function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; }
+document.addEventListener('dragenter', function (e) { if (hasFiles(e)) { dragDepth++; dropHint.hidden = false; } });
+document.addEventListener('dragleave', function (e) { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; dropHint.hidden = true; } });
+document.addEventListener('dragover', function (e) { if (hasFiles(e)) e.preventDefault(); });
+
+function entryFile(en) { return new Promise(function (res, rej) { en.file(res, rej); }); }
+function entryKids(en) {
+  return new Promise(function (res) {
+    var rd = en.createReader(), all = [];
+    (function next() { rd.readEntries(function (b) { if (b.length) { all = all.concat(Array.prototype.slice.call(b)); next(); } else res(all); }, function () { res(all); }); })();
+  });
+}
+async function walkEntry(en, prefix, out, depth) {
+  if (out.length >= MAX_FILES || en.name.charAt(0) === '.') return;
+  if (en.isDirectory) {
+    if (depth > 6 || IGNORE.test(en.name)) return;
+    var kids = await entryKids(en);
+    for (var i = 0; i < kids.length; i++) await walkEntry(kids[i], prefix + en.name + '/', out, depth + 1);
+  } else out.push({ path: (prefix + en.name).replace(/^[^/]*\//, ''), file: await entryFile(en) });
+}
+
+document.addEventListener('drop', async function (e) {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0; dropHint.hidden = true;
+  var item = e.dataTransfer.items && e.dataTransfer.items[0];
+  if (!item) return;
+  try {
+    // Chrome / Edge can hand over a real handle, so Save keeps working for dropped folders
+    var h = item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
+    if (h && h.kind === 'directory') {
+      var list = [];
+      await walk(h, '', list, 0);
+      await openProject(list, h.name, h);
+      return;
+    }
+    var f = h && h.kind === 'file' ? await h.getFile() : e.dataTransfer.files[0];
+    if (f && /\.zip$/i.test(f.name)) { await openZipFile(f); return; }
+    var en = item.webkitGetAsEntry && item.webkitGetAsEntry();
+    if (en && en.isDirectory) {
+      var out = [];
+      await walkEntry(en, '', out, 0);
+      await openProject(out, en.name, null);
+      return;
+    }
+    flash('Drop a project folder or a .zip file');
+  } catch (err) { flash('Could not open that: ' + (err && err.message ? err.message : 'unknown error')); }
+});

@@ -28,7 +28,7 @@
       </a>
 
       <div class="dash-actions" id="dash-actions">
-        <button type="button" class="btn" id="dash-open" title="Open a project folder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl">Open folder</span></button>
+        <button type="button" class="btn" id="dash-open" title="Open a project folder or a zip file" aria-haspopup="menu"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl">Open</span></button>
         <button type="button" class="btn primary" id="dash-new" title="Start a new project"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New project</span></button>
         <button type="button" class="btn icon theme-btn" data-state="auto" title="Theme: follow device" aria-label="Theme: follow device">
             <span class="i-auto"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg></span>
@@ -70,6 +70,7 @@
     </main>
   </div>
 
+  <input type="file" id="zip-input" accept=".zip,application/zip,application/x-zip-compressed" hidden>
   <input type="file" id="folder-input" webkitdirectory directory multiple hidden>
   <input type="file" id="backup-input" accept="application/json,.json" hidden>
 
@@ -80,6 +81,7 @@
   <script src="js/projects.js"></script>
   <script src="js/hooks.js"></script>
   <script src="js/builder.js"></script>
+  <script src="js/zip.js"></script>
   <script src="js/folder-import.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/dashboard.js"></script>

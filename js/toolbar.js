@@ -40,6 +40,7 @@ function armed(btn, label, action) {
   function reset() { clearTimeout(timer); on = false; btn.textContent = idle; btn.classList.remove('armed'); }
 }
 $('open-folder').addEventListener('click', function () { setMenu(false); openFolder(); });
+$('open-zip').addEventListener('click', function () { setMenu(false); openZip(); });
 $('new-project').addEventListener('click', function () { setMenu(false); createProject('blank'); });
 $('sample').addEventListener('click', function () { setMenu(false); createProject('sample'); });
 armed($('clear'), 'Clear this code?', function () { setMenu(false); clearCurrent(); });
